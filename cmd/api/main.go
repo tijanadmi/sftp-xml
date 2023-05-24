@@ -1,138 +1,35 @@
 package main
 
 import (
+	"context"
+	"database/sql"
 	"encoding/xml"
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
+	"os"
+	"time"
 
+	"sftp_xml/pkg/data"
+	"sftp_xml/pkg/repository"
+	"sftp_xml/pkg/repository/dbrepo"
+
+	_ "github.com/godror/godror"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )
 
-type EnergyAccountReport struct {
-	XMLName                xml.Name `xml:"EnergyAccountReport"`
-	Text                   string   `xml:",chardata"`
-	DtdRelease             string   `xml:"DtdRelease,attr"`
-	DtdVersion             string   `xml:"DtdVersion,attr"`
-	DocumentIdentification struct {
-		Text string `xml:",chardata"`
-		V    string `xml:"v,attr"`
-	} `xml:"DocumentIdentification"`
-	DocumentVersion struct {
-		Text string `xml:",chardata"`
-		V    string `xml:"v,attr"`
-	} `xml:"DocumentVersion"`
-	DocumentType struct {
-		Text string `xml:",chardata"`
-		V    string `xml:"v,attr"`
-	} `xml:"DocumentType"`
-	DocumentStatus struct {
-		Text string `xml:",chardata"`
-		V    string `xml:"v,attr"`
-	} `xml:"DocumentStatus"`
-	ProcessType struct {
-		Text string `xml:",chardata"`
-		V    string `xml:"v,attr"`
-	} `xml:"ProcessType"`
-	ClassificationType struct {
-		Text string `xml:",chardata"`
-		V    string `xml:"v,attr"`
-	} `xml:"ClassificationType"`
-	SenderIdentification struct {
-		Text         string `xml:",chardata"`
-		V            string `xml:"v,attr"`
-		CodingScheme string `xml:"codingScheme,attr"`
-	} `xml:"SenderIdentification"`
-	SenderRole struct {
-		Text string `xml:",chardata"`
-		V    string `xml:"v,attr"`
-	} `xml:"SenderRole"`
-	ReceiverIdentification struct {
-		Text         string `xml:",chardata"`
-		V            string `xml:"v,attr"`
-		CodingScheme string `xml:"codingScheme,attr"`
-	} `xml:"ReceiverIdentification"`
-	ReceiverRole struct {
-		Text string `xml:",chardata"`
-		V    string `xml:"v,attr"`
-	} `xml:"ReceiverRole"`
-	DocumentDateTime struct {
-		Text string `xml:",chardata"`
-		V    string `xml:"v,attr"`
-	} `xml:"DocumentDateTime"`
-	AccountingPeriod struct {
-		Text string `xml:",chardata"`
-		V    string `xml:"v,attr"`
-	} `xml:"AccountingPeriod"`
-	Domain struct {
-		Text         string `xml:",chardata"`
-		V            string `xml:"v,attr"`
-		CodingScheme string `xml:"codingScheme,attr"`
-	} `xml:"Domain"`
-	AccountTimeSeries struct {
-		Text                            string `xml:",chardata"`
-		SendersTimeSeriesIdentification struct {
-			Text string `xml:",chardata"`
-			V    string `xml:"v,attr"`
-		} `xml:"SendersTimeSeriesIdentification"`
-		BusinessType struct {
-			Text string `xml:",chardata"`
-			V    string `xml:"v,attr"`
-		} `xml:"BusinessType"`
-		Product struct {
-			Text string `xml:",chardata"`
-			V    string `xml:"v,attr"`
-		} `xml:"Product"`
-		ObjectAggregation struct {
-			Text string `xml:",chardata"`
-			V    string `xml:"v,attr"`
-		} `xml:"ObjectAggregation"`
-		Area struct {
-			Text         string `xml:",chardata"`
-			V            string `xml:"v,attr"`
-			CodingScheme string `xml:"codingScheme,attr"`
-		} `xml:"Area"`
-		MeasurementUnit struct {
-			Text string `xml:",chardata"`
-			V    string `xml:"v,attr"`
-		} `xml:"MeasurementUnit"`
-		AccountingPoint struct {
-			Text         string `xml:",chardata"`
-			V            string `xml:"v,attr"`
-			CodingScheme string `xml:"codingScheme,attr"`
-		} `xml:"AccountingPoint"`
-		Period struct {
-			Text         string `xml:",chardata"`
-			TimeInterval struct {
-				Text string `xml:",chardata"`
-				V    string `xml:"v,attr"`
-			} `xml:"TimeInterval"`
-			Resolution struct {
-				Text string `xml:",chardata"`
-				V    string `xml:"v,attr"`
-			} `xml:"Resolution"`
-			AccountInterval []struct {
-				Text string `xml:",chardata"`
-				Pos  struct {
-					Text string `xml:",chardata"`
-					V    string `xml:"v,attr"`
-				} `xml:"Pos"`
-				InQty struct {
-					Text string `xml:",chardata"`
-					V    string `xml:"v,attr"`
-				} `xml:"InQty"`
-				OutQty struct {
-					Text string `xml:",chardata"`
-					V    string `xml:"v,attr"`
-				} `xml:"OutQty"`
-			} `xml:"AccountInterval"`
-		} `xml:"Period"`
-	} `xml:"AccountTimeSeries"`
+type application struct {
+	db struct {
+		dsn string
+	}
+	logger *log.Logger
+	DB     repository.DatabaseRepo
 }
 
 func main() {
-
+	var app application
 	serverPort := 22
 	var serverAddr string
 	var username string
@@ -142,7 +39,24 @@ func main() {
 	flag.StringVar(&username, "username", "", "SFTP user")
 	flag.StringVar(&password, "password", "", "SFTP user password")
 
+	flag.StringVar(&app.db.dsn, "dsn", "", "Oracle connection string")
+
 	flag.Parse()
+
+	logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
+
+	db, err := openDB(app)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	defer db.Close()
+
+	logger.Println("Connected to database")
+
+	app = application{
+		logger: logger,
+		DB:     &dbrepo.OracleDBRepo{DB: db},
+	}
 
 	// Create an SSH client config with the given username and password
 	fmt.Println(serverAddr)
@@ -169,14 +83,19 @@ func main() {
 	}
 	defer sftpClient.Close()
 	fmt.Println("Create a client!")
+
+	yesterdayDate := time.Now().AddDate(0, 0, -1).Format("20060102")
+	filename := fmt.Sprintf("/cges/%s_SOVA_10YCS-CG-TSO---S_10Y1001C--00100H_001.xml", yesterdayDate)
+	fmt.Println(yesterdayDate)
+	fmt.Println(filename)
 	// Open the remote file and read its contents
-	remoteFile, err := sftpClient.Open("/cges/20230322_SOVA_10YCS-CG-TSO---S_10Y1001C--00100H_001.xml")
+	remoteFile, err := sftpClient.Open(filename)
 	if err != nil {
 		panic(err)
 	}
 	defer remoteFile.Close()
 
-	var xmlData EnergyAccountReport
+	var xmlData data.EnergyAccountReport_100H
 	fileContents, err := ioutil.ReadAll(remoteFile)
 	if err != nil {
 		panic(err)
@@ -189,8 +108,33 @@ func main() {
 
 	// Print the file contents to the console
 	//fmt.Println(string(fileContents))
-	//fmt.Println(xmlData)
+	fmt.Println(xmlData.SenderIdentification.V)
+	fmt.Println(xmlData.ReceiverIdentification.V)
+	fmt.Println(xmlData.DocumentDateTime.V)
+	fmt.Println(xmlData.AccountingPeriod.V)
+	fmt.Println(xmlData.AccountTimeSeries.SendersTimeSeriesIdentification.V)
+	fmt.Println(xmlData.AccountTimeSeries.Area.V)
+	fmt.Println(xmlData.AccountTimeSeries.AccountingPoint.V)
+	fmt.Println(xmlData.AccountTimeSeries.Period.Resolution.V)
 	for i := range xmlData.AccountTimeSeries.Period.AccountInterval {
 		fmt.Printf("Za %s interval %s %s\n", xmlData.AccountTimeSeries.Period.AccountInterval[i].Pos.V, xmlData.AccountTimeSeries.Period.AccountInterval[i].InQty.V, xmlData.AccountTimeSeries.Period.AccountInterval[i].OutQty.V)
 	}
+
+}
+
+func openDB(app application) (*sql.DB, error) {
+	db, err := sql.Open("godror", app.db.dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err = db.PingContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return db, nil
 }
