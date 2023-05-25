@@ -4,7 +4,17 @@ import (
 	"encoding/xml"
 )
 
-// EnergyAccountReport was generated 2023-05-24 10:16:35 by https://xml-to-go.github.io/ in Ukraine.
+type SftpFile struct {
+	Name    string `json:"name"`
+	ModTime string `json:"mod_time"`
+	Size    string `json:"size"`
+	FileDate    string `json:"file_date"`
+	FileSender  string `json:"file_sender"`
+	FileArea    string `json:"file_area"`
+	FileVersion string `json:"file_version"`
+}
+
+// EnergyAccountReport
 type EnergyAccountReport struct {
 	XMLName                xml.Name `xml:"EnergyAccountReport"`
 	Text                   string   `xml:",chardata"`

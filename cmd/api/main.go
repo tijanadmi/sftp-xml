@@ -84,41 +84,51 @@ func main() {
 	defer sftpClient.Close()
 	fmt.Println("Create a client!")
 
-	yesterdayDate := time.Now().AddDate(0, 0, -1).Format("20060102")
-	filename := fmt.Sprintf("/cges/%s_SOVA_10YCS-CG-TSO---S_10Y1001C--00100H_001.xml", yesterdayDate)
-	fmt.Println(yesterdayDate)
-	fmt.Println(filename)
-	// Open the remote file and read its contents
-	remoteFile, err := sftpClient.Open(filename)
+	//*
+	//* List working directory files
+	//*
+	//listFiles(*sftpClient, "cges")
+
+	listOfFiles, err := app.getFiles(*sftpClient, "cges")
+
 	if err != nil {
 		panic(err)
 	}
-	defer remoteFile.Close()
+	for _, f := range listOfFiles {
+		fmt.Println(f.Name, f.FileDate, f.FileSender, f.FileArea, f.FileVersion)
+		if f.FileArea == "10Y1001C--00100H" {
+			filename := fmt.Sprintf("/cges/%s", f.Name)
+			remoteFile, err := sftpClient.Open(filename)
+			if err != nil {
+				panic(err)
+			}
+			defer remoteFile.Close()
+			var xmlData data.EnergyAccountReport_100H
+			fileContents, err := ioutil.ReadAll(remoteFile)
+			if err != nil {
+				panic(err)
+			}
 
-	var xmlData data.EnergyAccountReport_100H
-	fileContents, err := ioutil.ReadAll(remoteFile)
-	if err != nil {
-		panic(err)
+			err = xml.Unmarshal(fileContents, &xmlData)
+			if err != nil {
+				panic(err)
+			}
+
+			id, err := app.DB.InsertSovaDayAndReturnId(xmlData, f.FileDate, f.FileSender, f.FileArea, f.FileVersion)
+			if err != nil {
+				panic(err)
+			}
+			for i := range xmlData.AccountTimeSeries.Period.AccountInterval {
+				fmt.Printf("Za %s interval %s %s\n", xmlData.AccountTimeSeries.Period.AccountInterval[i].Pos.V, xmlData.AccountTimeSeries.Period.AccountInterval[i].InQty.V, xmlData.AccountTimeSeries.Period.AccountInterval[i].OutQty.V)
+				err := app.DB.InsertSovaAccountInterval(id, xmlData.AccountTimeSeries.Period.AccountInterval[i].Pos.V, xmlData.AccountTimeSeries.Period.AccountInterval[i].InQty.V, xmlData.AccountTimeSeries.Period.AccountInterval[i].OutQty.V)
+				if err != nil {
+					panic(err)
+				}
+			}
+		}
 	}
 
-	err = xml.Unmarshal(fileContents, &xmlData)
-	if err != nil {
-		panic(err)
-	}
-
-	// Print the file contents to the console
-	//fmt.Println(string(fileContents))
-	fmt.Println(xmlData.SenderIdentification.V)
-	fmt.Println(xmlData.ReceiverIdentification.V)
-	fmt.Println(xmlData.DocumentDateTime.V)
-	fmt.Println(xmlData.AccountingPeriod.V)
-	fmt.Println(xmlData.AccountTimeSeries.SendersTimeSeriesIdentification.V)
-	fmt.Println(xmlData.AccountTimeSeries.Area.V)
-	fmt.Println(xmlData.AccountTimeSeries.AccountingPoint.V)
-	fmt.Println(xmlData.AccountTimeSeries.Period.Resolution.V)
-	for i := range xmlData.AccountTimeSeries.Period.AccountInterval {
-		fmt.Printf("Za %s interval %s %s\n", xmlData.AccountTimeSeries.Period.AccountInterval[i].Pos.V, xmlData.AccountTimeSeries.Period.AccountInterval[i].InQty.V, xmlData.AccountTimeSeries.Period.AccountInterval[i].OutQty.V)
-	}
+	//*
 
 }
 
