@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/xml"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"sftp_xml/pkg/data"
 	"strings"
@@ -75,3 +77,68 @@ func (app *application) getFiles(sc sftp.Client, remoteDir string) ([]*data.Sftp
 
 	return
 }*/
+
+func (app *application) insertDataFromFile00100H(folderName string, sftpClient sftp.Client, f data.SftpFile) error {
+	filename := fmt.Sprintf("/%s/%s", folderName, f.Name)
+	remoteFile, err := sftpClient.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer remoteFile.Close()
+	var xmlData data.EnergyAccountReport_100H
+	fileContents, err := ioutil.ReadAll(remoteFile)
+	if err != nil {
+		return err
+	}
+
+	err = xml.Unmarshal(fileContents, &xmlData)
+	if err != nil {
+		panic(err)
+	}
+
+	id, err := app.DB.InsertSovaDayAndReturnId(xmlData, f.FileDate, f.FileSender, f.FileArea, f.FileVersion)
+	if err != nil {
+		return err
+	}
+	for i := range xmlData.AccountTimeSeries.Period.AccountInterval {
+		//fmt.Printf("Za %s interval %s %s\n", xmlData.AccountTimeSeries.Period.AccountInterval[i].Pos.V, xmlData.AccountTimeSeries.Period.AccountInterval[i].InQty.V, xmlData.AccountTimeSeries.Period.AccountInterval[i].OutQty.V)
+		err := app.DB.InsertSovaAccountInterval(id, xmlData.AccountTimeSeries.Period.AccountInterval[i].Pos.V, xmlData.AccountTimeSeries.Period.AccountInterval[i].InQty.V, xmlData.AccountTimeSeries.Period.AccountInterval[i].OutQty.V)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (app *application) insertDataFromFile(folderName string, sftpClient sftp.Client, f data.SftpFile) error {
+	filename := fmt.Sprintf("/%s/%s", folderName, f.Name)
+	remoteFile, err := sftpClient.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer remoteFile.Close()
+	var xmlDataA data.EnergyAccountReport
+	fileContents, err := ioutil.ReadAll(remoteFile)
+	if err != nil {
+		return err
+	}
+
+	err = xml.Unmarshal(fileContents, &xmlDataA)
+	if err != nil {
+		return err
+	}
+	for j := range xmlDataA.AccountTimeSeries {
+		id, err := app.DB.InsertSovaDayIndexAndReturnId(xmlDataA, j, f.FileDate, f.FileSender, f.FileArea, f.FileVersion)
+		if err != nil {
+			return err
+		}
+		for i := range xmlDataA.AccountTimeSeries[j].Period.AccountInterval {
+			//fmt.Printf("Za %s interval %s %s\n", xmlDataA.AccountTimeSeries[j].Period.AccountInterval[i].Pos.V, xmlDataA.AccountTimeSeries[j].Period.AccountInterval[i].InQty.V, xmlDataA.AccountTimeSeries[j].Period.AccountInterval[i].OutQty.V)
+			err := app.DB.InsertSovaAccountInterval(id, xmlDataA.AccountTimeSeries[j].Period.AccountInterval[i].Pos.V, xmlDataA.AccountTimeSeries[j].Period.AccountInterval[i].InQty.V, xmlDataA.AccountTimeSeries[j].Period.AccountInterval[i].OutQty.V)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}

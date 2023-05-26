@@ -54,6 +54,7 @@ func (m *OracleDBRepo) GetSovaIdentify() ([]*data.SovaIdentify, error) {
 	return is, nil
 }
 
+
 func (m *OracleDBRepo) InsertSovaDayAndReturnId(e data.EnergyAccountReport_100H, FileDate string, FileSender string, FileArea string, FileVersion string) (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -70,6 +71,29 @@ func (m *OracleDBRepo) InsertSovaDayAndReturnId(e data.EnergyAccountReport_100H,
 	defer stmt.Close()
 
 	_, err = stmt.ExecContext(ctx, FileDate, FileSender, FileArea, FileVersion, e.SenderIdentification.V, e.ReceiverIdentification.V, e.DocumentDateTime.V, e.AccountingPeriod.V, e.AccountTimeSeries.SendersTimeSeriesIdentification.V, e.AccountTimeSeries.Area.V, e.AccountTimeSeries.AccountingPoint.V, e.AccountTimeSeries.Period.Resolution.V, sql.Out{Dest: &id})
+	if err != nil {
+		return 0, err
+	}
+
+	return id, nil
+}
+
+func (m *OracleDBRepo) InsertSovaDayIndexAndReturnId(e data.EnergyAccountReport, i int, FileDate string, FileSender string, FileArea string, FileVersion string) (int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	query := `insert into VET.SOVA_DAY (FILE_DATE, FILE_SENDER, FILE_AREA, FILE_VERSION, SENDER_IDENTIFICATION, RECEIVER_IDENTIFICATION, DOCUMENT_DATATIME, 
+		ACCOUNTING_PERIOD, SENDERS_TIMESERIES_IDENT, AREA, ACCOUNTING_POINT, RESOLUTION_OF_PERIOD) 
+		values (:1, :2, :3, :4, :5, :6, :7, :8, :9, :10, :11, :12) RETURNING id INTO :13
+	`
+	var id int
+	stmt, err := m.DB.PrepareContext(ctx, query)
+	if err != nil {
+		return 0, err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.ExecContext(ctx, FileDate, FileSender, FileArea, FileVersion, e.SenderIdentification.V, e.ReceiverIdentification.V, e.DocumentDateTime.V, e.AccountingPeriod.V, e.AccountTimeSeries[i].SendersTimeSeriesIdentification.V, e.AccountTimeSeries[i].Area.V, e.AccountTimeSeries[i].AccountingPoint.V, e.AccountTimeSeries[i].Period.Resolution.V, sql.Out{Dest: &id})
 	if err != nil {
 		return 0, err
 	}

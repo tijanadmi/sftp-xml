@@ -3,15 +3,13 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/xml"
+	"log"
+
 	"flag"
 	"fmt"
-	"io/ioutil"
-	"log"
 	"os"
 	"time"
 
-	"sftp_xml/pkg/data"
 	"sftp_xml/pkg/repository"
 	"sftp_xml/pkg/repository/dbrepo"
 
@@ -84,11 +82,6 @@ func main() {
 	defer sftpClient.Close()
 	fmt.Println("Create a client!")
 
-	//*
-	//* List working directory files
-	//*
-	//listFiles(*sftpClient, "cges")
-
 	listOfFiles, err := app.getFiles(*sftpClient, "cges")
 
 	if err != nil {
@@ -97,34 +90,16 @@ func main() {
 	for _, f := range listOfFiles {
 		fmt.Println(f.Name, f.FileDate, f.FileSender, f.FileArea, f.FileVersion)
 		if f.FileArea == "10Y1001C--00100H" {
-			filename := fmt.Sprintf("/cges/%s", f.Name)
-			remoteFile, err := sftpClient.Open(filename)
+			err = app.insertDataFromFile00100H("cges", *sftpClient, *f)
 			if err != nil {
 				panic(err)
 			}
-			defer remoteFile.Close()
-			var xmlData data.EnergyAccountReport_100H
-			fileContents, err := ioutil.ReadAll(remoteFile)
-			if err != nil {
-				panic(err)
-			}
-
-			err = xml.Unmarshal(fileContents, &xmlData)
+		} else {
+			err = app.insertDataFromFile("cges", *sftpClient, *f)
 			if err != nil {
 				panic(err)
 			}
 
-			id, err := app.DB.InsertSovaDayAndReturnId(xmlData, f.FileDate, f.FileSender, f.FileArea, f.FileVersion)
-			if err != nil {
-				panic(err)
-			}
-			for i := range xmlData.AccountTimeSeries.Period.AccountInterval {
-				fmt.Printf("Za %s interval %s %s\n", xmlData.AccountTimeSeries.Period.AccountInterval[i].Pos.V, xmlData.AccountTimeSeries.Period.AccountInterval[i].InQty.V, xmlData.AccountTimeSeries.Period.AccountInterval[i].OutQty.V)
-				err := app.DB.InsertSovaAccountInterval(id, xmlData.AccountTimeSeries.Period.AccountInterval[i].Pos.V, xmlData.AccountTimeSeries.Period.AccountInterval[i].InQty.V, xmlData.AccountTimeSeries.Period.AccountInterval[i].OutQty.V)
-				if err != nil {
-					panic(err)
-				}
-			}
 		}
 	}
 
