@@ -82,7 +82,7 @@ func main() {
 	defer sftpClient.Close()
 	fmt.Println("Create a client!")
 
-	listOfFiles, err := app.getFiles(*sftpClient, "cges")
+	/*listOfFiles, err := app.getFiles(*sftpClient, "cges")
 
 	if err != nil {
 		panic(err)
@@ -101,8 +101,11 @@ func main() {
 			}
 
 		}
+	}*/
+	err = app.readFromFolder("cges", *sftpClient)
+	if err != nil {
+		panic(err)
 	}
-
 	//*
 
 }

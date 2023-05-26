@@ -142,3 +142,28 @@ func (app *application) insertDataFromFile(folderName string, sftpClient sftp.Cl
 	}
 	return nil
 }
+
+func (app *application) readFromFolder(folderName string, sftpClient sftp.Client) error {
+
+	listOfFiles, err := app.getFiles(sftpClient, "cges")
+
+	if err != nil {
+		return err
+	}
+	for _, f := range listOfFiles {
+		fmt.Println(f.Name, f.FileDate, f.FileSender, f.FileArea, f.FileVersion)
+		if f.FileArea == "10Y1001C--00100H" {
+			err = app.insertDataFromFile00100H("cges", sftpClient, *f)
+			if err != nil {
+				return err
+			}
+		} else {
+			err = app.insertDataFromFile("cges", sftpClient, *f)
+			if err != nil {
+				return err
+			}
+
+		}
+	}
+	return nil
+}
